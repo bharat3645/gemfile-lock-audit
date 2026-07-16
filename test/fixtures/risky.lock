@@ -1,0 +1,28 @@
+GIT
+  remote: https://github.com/example/patched-gem.git
+  revision: a1b2c3d4e5f60718293a4b5c6d7e8f9012345678
+  branch: main
+  specs:
+    patched-gem (0.3.0)
+
+PATH
+  remote: ../local-tool
+  specs:
+    local-tool (0.0.1)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    railes (7.0.4)
+    rake (13.0.0.rc1)
+    thor (1.2.1)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  local-tool!
+  patched-gem!
+  railes
+  rake
+  thor
