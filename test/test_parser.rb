@@ -60,4 +60,15 @@ class TestParser < Minitest::Test
     lf = GemfileLockAudit::Parser.parse("GEM\n  remote: https://rubygems.org/\n\n  specs:\n\n    rake (13.0.6)\n\nPLATFORMS\n  ruby\n\nDEPENDENCIES\n  rake\n")
     assert_equal ["rake"], lf.gem_specs.keys
   end
+
+  def test_gem_remotes_captured_for_default_source
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "clean.lock")))
+    assert_equal ["https://rubygems.org/"], lf.gem_remotes
+  end
+
+  def test_gem_remotes_captured_for_custom_source
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "custom_remote.lock")))
+    assert_equal ["https://gems.internal.example.com/"], lf.gem_remotes
+    assert_equal ["innerbuild"], lf.gem_specs.keys
+  end
 end

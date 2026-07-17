@@ -14,6 +14,10 @@ class TestRules < Minitest::Test
     @risky ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "risky.lock")))
   end
 
+  def custom_remote
+    @custom_remote ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "custom_remote.lock")))
+  end
+
   def test_clean_lockfile_has_no_git_or_path_findings
     assert_empty GemfileLockAudit::Rules.git_source_present(clean)
     assert_empty GemfileLockAudit::Rules.path_source_present(clean)
@@ -90,5 +94,28 @@ class TestRules < Minitest::Test
   def test_unconstrained_dependency_ignores_pinned_gems
     findings = GemfileLockAudit::Rules.unconstrained_dependency(clean)
     assert_empty findings
+  end
+
+  def test_custom_gem_remote_ignores_default_rubygems_source
+    assert_empty GemfileLockAudit::Rules.custom_gem_remote(clean)
+    assert_empty GemfileLockAudit::Rules.custom_gem_remote(risky)
+  end
+
+  def test_custom_gem_remote_flags_non_default_source
+    findings = GemfileLockAudit::Rules.custom_gem_remote(custom_remote)
+    assert_equal 1, findings.length
+    assert_equal "CUSTOM_GEM_REMOTE", findings.first.rule_id
+    assert_equal :medium, findings.first.severity
+    assert_equal "https://gems.internal.example.com/", findings.first.subject
+  end
+
+  def test_custom_gem_remote_deduplicates_repeated_remotes
+    lockfile = GemfileLockAudit::Parser.parse(
+      "GEM\n  remote: https://mirror.example.com/\n  specs:\n    a (1.0)\n" \
+      "GEM\n  remote: https://mirror.example.com/\n  specs:\n    b (1.0)\n" \
+      "PLATFORMS\n  ruby\nDEPENDENCIES\n  a\n  b\n"
+    )
+    findings = GemfileLockAudit::Rules.custom_gem_remote(lockfile)
+    assert_equal 1, findings.length
   end
 end

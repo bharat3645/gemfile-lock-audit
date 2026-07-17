@@ -27,6 +27,15 @@ class TestScanner < Minitest::Test
     assert_includes %w[C D F], report.grade
   end
 
+  def test_custom_remote_lockfile_flags_non_default_source
+    report = GemfileLockAudit::Scanner.scan_file(File.join(FIXTURES, "custom_remote.lock"))
+    rule_ids = report.findings.map(&:rule_id)
+
+    assert_includes rule_ids, "CUSTOM_GEM_REMOTE"
+    assert_equal 92, report.score
+    assert_equal "A", report.grade
+  end
+
   def test_score_to_grade_boundaries
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(100)
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(90)

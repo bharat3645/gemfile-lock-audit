@@ -11,6 +11,11 @@ module GemfileLockAudit
     info: 0
   }.freeze
 
+  # The remote Bundler talks to unless a Gemfile source overrides it. Any GEM
+  # section remote other than this is a deliberate choice (private gem
+  # server, internal mirror, etc.) -- not wrong, but worth surfacing.
+  DEFAULT_GEM_REMOTE = "https://rubygems.org/"
+
   # A curated list of well-known, high-traffic RubyGems used only for the
   # typosquat heuristic below. Not exhaustive, not a trust allowlist -- just
   # a reference set of names an attacker would plausibly want to impersonate.
@@ -120,6 +125,23 @@ module GemfileLockAudit
       )]
     end
 
+    def custom_gem_remote(lockfile)
+      lockfile.gem_remotes.uniq.filter_map do |remote|
+        next if remote == DEFAULT_GEM_REMOTE
+
+        Finding.new(
+          rule_id: "CUSTOM_GEM_REMOTE",
+          severity: :medium,
+          subject: remote,
+          message: "Gems are resolved from #{remote.inspect} instead of the default " \
+                    "#{DEFAULT_GEM_REMOTE.inspect}. This is normal for a private gem " \
+                    "server or mirror, but it also means rubygems.org's yank/ownership " \
+                    "checks don't apply -- worth confirming this remote is one your " \
+                    "team actually controls and trusts."
+        )
+      end
+    end
+
     def possible_typosquat(lockfile)
       names = lockfile.gem_specs.keys
       names.filter_map do |name|
@@ -176,6 +198,7 @@ module GemfileLockAudit
       unconstrained_dependency
       prerelease_pin
       missing_bundled_with
+      custom_gem_remote
       possible_typosquat
     ].freeze
   end

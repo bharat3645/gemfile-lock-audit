@@ -1,0 +1,13 @@
+GEM
+  remote: https://gems.internal.example.com/
+  specs:
+    innerbuild (2.1.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  innerbuild (~> 2.1)
+
+BUNDLED WITH
+   2.4.10

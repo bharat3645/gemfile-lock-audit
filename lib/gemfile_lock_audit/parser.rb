@@ -12,6 +12,7 @@ module GemfileLockAudit
     :git_sources,      # Array[GitSource]
     :path_sources,     # Array[PathSource]
     :gem_specs,        # Hash[String, GemSpec] -- name => spec, from the GEM section
+    :gem_remotes,        # Array[String] -- every "remote:" line seen under a GEM section
     :dependencies,      # Array[{name:, constraint:}] -- from the DEPENDENCIES section (top-level only)
     :platforms,         # Array[String]
     :bundled_with,       # String or nil
@@ -38,6 +39,7 @@ module GemfileLockAudit
       git_sources = []
       path_sources = []
       gem_specs = {}
+      gem_remotes = []
       dependencies = []
       platforms = []
       bundled_with = nil
@@ -95,7 +97,13 @@ module GemfileLockAudit
         when "GEM"
           if indent == 2
             key, _, value = line.partition(":")
-            subsection = :specs if key.strip == "specs"
+            key = key.strip
+            value = value.strip
+            if key == "remote"
+              gem_remotes << value unless value.empty?
+            elsif key == "specs"
+              subsection = :specs
+            end
           elsif indent == 4 && subsection == :specs
             name, version = parse_spec_line(line)
             gem_specs[name] = GemSpec.new(name: name, version: version, source: :rubygems) if name
@@ -117,6 +125,7 @@ module GemfileLockAudit
         git_sources: git_sources,
         path_sources: path_sources,
         gem_specs: gem_specs,
+        gem_remotes: gem_remotes,
         dependencies: dependencies,
         platforms: platforms,
         bundled_with: bundled_with,

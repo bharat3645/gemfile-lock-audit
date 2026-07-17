@@ -73,6 +73,7 @@ Score: 59/100 (grade D)
 | `GIT_TRACKS_BRANCH` | high | A git-sourced gem tracks a branch (not a tag/ref), so the next `bundle update` follows unreviewed commits |
 | `POSSIBLE_TYPOSQUAT` | high | A gem name is a near-miss (Levenshtein distance ≤2) to a well-known gem |
 | `GIT_SOURCE` | medium | Any gem sourced directly from git instead of a registry |
+| `CUSTOM_GEM_REMOTE` | medium | The `GEM` section resolves from something other than `https://rubygems.org/` (private server, internal mirror) |
 | `PRERELEASE_PIN` | low | A resolved version looks like an alpha/beta/rc/pre build |
 | `PATH_SOURCE` | info | A gem is loaded from a local filesystem path |
 | `UNCONSTRAINED_DEPENDENCY` | info | A top-level Gemfile dependency has no version constraint at all |
@@ -100,7 +101,7 @@ ruby test/test_rules.rb
 ruby test/test_scanner.rb
 ```
 
-25 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
+31 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
 run the test suite).
 
 ## Contributing
