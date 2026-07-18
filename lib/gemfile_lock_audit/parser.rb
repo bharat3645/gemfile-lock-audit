@@ -4,14 +4,20 @@ module GemfileLockAudit
   # Raised when a file doesn't look like a Gemfile.lock at all.
   class ParseError < StandardError; end
 
-  GemSpec = Struct.new(:name, :version, :source, keyword_init: true)
+  # `remote` is only populated for rubygems-sourced specs (nil for :git/:path
+  # specs, which already carry their own remote via GitSource/PathSource) --
+  # it's the "remote:" line of the specific GEM block this spec's "specs:"
+  # list appeared under, so a lockfile with multiple GEM blocks (e.g. from a
+  # scoped `source "..." do ... end` in the Gemfile) can attribute each gem
+  # to the remote it actually came from, not just the lockfile as a whole.
+  GemSpec = Struct.new(:name, :version, :source, :remote, keyword_init: true)
   GitSource = Struct.new(:remote, :revision, :branch, :tag, :ref, :gems, keyword_init: true)
   PathSource = Struct.new(:remote, :gems, keyword_init: true)
 
   Lockfile = Struct.new(
     :git_sources,      # Array[GitSource]
     :path_sources,     # Array[PathSource]
-    :gem_specs,        # Hash[String, GemSpec] -- name => spec, from the GEM section
+    :gem_specs,        # Hash[String, GemSpec] -- name => spec, from the GEM section(s)
     :gem_remotes,        # Array[String] -- every "remote:" line seen under a GEM section
     :dependencies,      # Array[{name:, constraint:}] -- from the DEPENDENCIES section (top-level only)
     :platforms,         # Array[String]
@@ -48,6 +54,7 @@ module GemfileLockAudit
       section = nil
       subsection = nil # within GIT/PATH/GEM: :remote_block, :specs
       current_source = nil # the GitSource/PathSource currently being built
+      current_gem_remote = nil # the "remote:" value of the GEM block currently being read
 
       lines.each do |raw_line|
         next if raw_line.strip.empty?
@@ -65,6 +72,12 @@ module GemfileLockAudit
           when "PATH"
             current_source = PathSource.new(gems: [])
             path_sources << current_source
+          when "GEM"
+            # A lockfile can have more than one top-level GEM block (e.g. one
+            # per scoped `source "..." do ... end` in the Gemfile) -- reset so
+            # specs in this block aren't attributed to the previous block's
+            # remote.
+            current_gem_remote = nil
           end
           next
         end
@@ -101,12 +114,13 @@ module GemfileLockAudit
             value = value.strip
             if key == "remote"
               gem_remotes << value unless value.empty?
+              current_gem_remote = value unless value.empty?
             elsif key == "specs"
               subsection = :specs
             end
           elsif indent == 4 && subsection == :specs
             name, version = parse_spec_line(line)
-            gem_specs[name] = GemSpec.new(name: name, version: version, source: :rubygems) if name
+            gem_specs[name] = GemSpec.new(name: name, version: version, source: :rubygems, remote: current_gem_remote) if name
           end
           # deeper indents (>4) are transitive sub-dependency listings; not needed for auditing
         when "PLATFORMS"

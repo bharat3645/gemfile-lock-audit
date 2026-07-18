@@ -142,6 +142,34 @@ module GemfileLockAudit
       end
     end
 
+    # CUSTOM_GEM_REMOTE (above) says "a non-default remote exists somewhere in
+    # this lockfile". It can't say more than that because gem_specs used to
+    # discard which GEM block (and therefore which remote) each spec came
+    # from. Now that Parser attaches the originating remote to every
+    # rubygems-sourced GemSpec, this rule names the specific gem(s) -- the
+    # per-gem attribution a scoped `source "..." do ... end` block in the
+    # Gemfile produces. Severity :info: it's detail on a risk CUSTOM_GEM_REMOTE
+    # already scored, not a second independent one, so it doesn't add to the
+    # point deduction.
+    def custom_source_dependency(lockfile)
+      lockfile.gem_specs.values.filter_map do |spec|
+        next unless spec.source == :rubygems
+        next unless spec.remote
+        next if spec.remote == DEFAULT_GEM_REMOTE
+
+        Finding.new(
+          rule_id: "CUSTOM_SOURCE_DEPENDENCY",
+          severity: :info,
+          subject: spec.name,
+          message: "'#{spec.name}' (#{spec.version}) resolves from #{spec.remote.inspect} " \
+                    "rather than the default #{DEFAULT_GEM_REMOTE.inspect} -- likely pinned " \
+                    "there by a scoped `source \"...\" do ... end` block in the Gemfile. " \
+                    "See CUSTOM_GEM_REMOTE for the remote-level finding; this is the " \
+                    "gem-level detail so you know exactly which dependency it applies to."
+        )
+      end
+    end
+
     def possible_typosquat(lockfile)
       names = lockfile.gem_specs.keys
       names.filter_map do |name|
@@ -199,6 +227,7 @@ module GemfileLockAudit
       prerelease_pin
       missing_bundled_with
       custom_gem_remote
+      custom_source_dependency
       possible_typosquat
     ].freeze
   end

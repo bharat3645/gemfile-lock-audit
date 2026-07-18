@@ -18,6 +18,10 @@ class TestRules < Minitest::Test
     @custom_remote ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "custom_remote.lock")))
   end
 
+  def multi_source
+    @multi_source ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "multi_source.lock")))
+  end
+
   def test_clean_lockfile_has_no_git_or_path_findings
     assert_empty GemfileLockAudit::Rules.git_source_present(clean)
     assert_empty GemfileLockAudit::Rules.path_source_present(clean)
@@ -117,5 +121,28 @@ class TestRules < Minitest::Test
     )
     findings = GemfileLockAudit::Rules.custom_gem_remote(lockfile)
     assert_equal 1, findings.length
+  end
+
+  def test_custom_source_dependency_ignores_default_remote_gems
+    assert_empty GemfileLockAudit::Rules.custom_source_dependency(clean)
+    assert_empty GemfileLockAudit::Rules.custom_source_dependency(risky)
+  end
+
+  def test_custom_source_dependency_flags_only_the_gem_from_the_scoped_source
+    findings = GemfileLockAudit::Rules.custom_source_dependency(multi_source)
+    assert_equal 1, findings.length
+    assert_equal "CUSTOM_SOURCE_DEPENDENCY", findings.first.rule_id
+    assert_equal :info, findings.first.severity
+    assert_equal "innerbuild", findings.first.subject
+  end
+
+  def test_custom_source_dependency_does_not_flag_git_or_path_specs
+    # git_source_present/path_source_present already cover GIT and PATH; this
+    # rule should stay scoped to :rubygems specs only, since a spec's
+    # `remote` field is nil (not "custom") for git/path sources.
+    findings = GemfileLockAudit::Rules.custom_source_dependency(risky)
+    rule_subjects = findings.map(&:subject)
+    refute_includes rule_subjects, "patched-gem"
+    refute_includes rule_subjects, "local-tool"
   end
 end

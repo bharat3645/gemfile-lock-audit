@@ -36,6 +36,23 @@ class TestScanner < Minitest::Test
     assert_equal "A", report.grade
   end
 
+  def test_multi_source_lockfile_flags_remote_and_the_specific_dependency
+    report = GemfileLockAudit::Scanner.scan_file(File.join(FIXTURES, "multi_source.lock"))
+    rule_ids = report.findings.map(&:rule_id)
+
+    assert_includes rule_ids, "CUSTOM_GEM_REMOTE"
+    assert_includes rule_ids, "CUSTOM_SOURCE_DEPENDENCY"
+
+    dependency_finding = report.findings.find { |f| f.rule_id == "CUSTOM_SOURCE_DEPENDENCY" }
+    assert_equal "innerbuild", dependency_finding.subject
+
+    # CUSTOM_SOURCE_DEPENDENCY is :info (0-weight) -- it adds detail to the
+    # already-scored CUSTOM_GEM_REMOTE (:medium, -8) finding, not a second
+    # deduction, so a lockfile with one custom-sourced gem still lands at 92.
+    assert_equal 92, report.score
+    assert_equal "A", report.grade
+  end
+
   def test_score_to_grade_boundaries
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(100)
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(90)

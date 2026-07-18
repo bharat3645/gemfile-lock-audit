@@ -71,4 +71,26 @@ class TestParser < Minitest::Test
     assert_equal ["https://gems.internal.example.com/"], lf.gem_remotes
     assert_equal ["innerbuild"], lf.gem_specs.keys
   end
+
+  def test_gem_spec_remote_set_for_single_gem_block
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "clean.lock")))
+    assert_equal "https://rubygems.org/", lf.gem_specs["rake"].remote
+  end
+
+  def test_gem_spec_remote_attributed_per_block_for_multiple_gem_sections
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "multi_source.lock")))
+
+    assert_equal ["https://rubygems.org/", "https://gems.internal.example.com/"], lf.gem_remotes
+    assert_equal "https://rubygems.org/", lf.gem_specs["rake"].remote
+    assert_equal "https://rubygems.org/", lf.gem_specs["thor"].remote
+    assert_equal "https://gems.internal.example.com/", lf.gem_specs["innerbuild"].remote
+  end
+
+  def test_git_and_path_specs_have_nil_remote
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "risky.lock")))
+    git_spec = lf.git_sources.first.gems.first
+    path_spec = lf.path_sources.first.gems.first
+    assert_nil git_spec.remote
+    assert_nil path_spec.remote
+  end
 end
