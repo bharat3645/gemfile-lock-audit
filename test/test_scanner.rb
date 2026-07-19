@@ -53,6 +53,15 @@ class TestScanner < Minitest::Test
     assert_equal "A", report.grade
   end
 
+  def test_pin_mismatch_lockfile_flags_both_directions
+    report = GemfileLockAudit::Scanner.scan_file(File.join(FIXTURES, "pin_mismatch.lock"))
+    mismatch_findings = report.findings.select { |f| f.rule_id == "SOURCE_PIN_MISMATCH" }
+
+    assert_equal 2, mismatch_findings.length
+    assert_includes mismatch_findings.map(&:subject), "innerbuild"
+    assert_includes mismatch_findings.map(&:subject), "rake"
+  end
+
   def test_score_to_grade_boundaries
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(100)
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(90)

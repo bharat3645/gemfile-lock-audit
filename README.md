@@ -74,6 +74,7 @@ Score: 59/100 (grade D)
 | `POSSIBLE_TYPOSQUAT` | high | A gem name is a near-miss (Levenshtein distance ≤2) to a well-known gem |
 | `GIT_SOURCE` | medium | Any gem sourced directly from git instead of a registry |
 | `CUSTOM_GEM_REMOTE` | medium | The `GEM` section resolves from something other than `https://rubygems.org/` (private server, internal mirror) |
+| `SOURCE_PIN_MISMATCH` | medium | The `!` pin marker in `DEPENDENCIES` disagrees with where a gem is actually sourced in `GIT`/`PATH`/`GEM` -- a sign of a hand edit or a bad merge, since `bundle lock` itself never produces this |
 | `CUSTOM_SOURCE_DEPENDENCY` | info | Per-gem detail for `CUSTOM_GEM_REMOTE`: names exactly which dependency resolves from that non-default remote, e.g. one pinned there by a scoped `source "..." do ... end` block in the Gemfile |
 | `PRERELEASE_PIN` | low | A resolved version looks like an alpha/beta/rc/pre build |
 | `PATH_SOURCE` | info | A gem is loaded from a local filesystem path |
@@ -102,7 +103,7 @@ ruby test/test_rules.rb
 ruby test/test_scanner.rb
 ```
 
-38 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
+44 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
 run the test suite).
 
 ## Contributing

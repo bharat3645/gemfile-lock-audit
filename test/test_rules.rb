@@ -22,6 +22,10 @@ class TestRules < Minitest::Test
     @multi_source ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "multi_source.lock")))
   end
 
+  def pin_mismatch
+    @pin_mismatch ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "pin_mismatch.lock")))
+  end
+
   def test_clean_lockfile_has_no_git_or_path_findings
     assert_empty GemfileLockAudit::Rules.git_source_present(clean)
     assert_empty GemfileLockAudit::Rules.path_source_present(clean)
@@ -144,5 +148,30 @@ class TestRules < Minitest::Test
     rule_subjects = findings.map(&:subject)
     refute_includes rule_subjects, "patched-gem"
     refute_includes rule_subjects, "local-tool"
+  end
+
+  def test_source_pin_mismatch_flags_missing_bang_for_custom_source_gem
+    findings = GemfileLockAudit::Rules.source_pin_mismatch(pin_mismatch)
+    finding = findings.find { |f| f.subject == "innerbuild" }
+    refute_nil finding
+    assert_equal "SOURCE_PIN_MISMATCH", finding.rule_id
+    assert_equal :medium, finding.severity
+  end
+
+  def test_source_pin_mismatch_flags_stray_bang_for_default_source_gem
+    findings = GemfileLockAudit::Rules.source_pin_mismatch(pin_mismatch)
+    finding = findings.find { |f| f.subject == "rake" }
+    refute_nil finding
+    assert_equal "SOURCE_PIN_MISMATCH", finding.rule_id
+  end
+
+  def test_source_pin_mismatch_silent_on_internally_consistent_lockfiles
+    # clean/risky/multi_source have no GIT/PATH/custom-remote gems that
+    # disagree with their DEPENDENCIES "!" marker. custom_remote's one
+    # scoped-source gem is correctly pinned with "!", so it's silent too.
+    assert_empty GemfileLockAudit::Rules.source_pin_mismatch(clean)
+    assert_empty GemfileLockAudit::Rules.source_pin_mismatch(risky)
+    assert_empty GemfileLockAudit::Rules.source_pin_mismatch(multi_source)
+    assert_empty GemfileLockAudit::Rules.source_pin_mismatch(custom_remote)
   end
 end

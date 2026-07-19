@@ -48,6 +48,19 @@ class TestParser < Minitest::Test
     dep = lf.dependencies.find { |d| d[:name] == "patched-gem" }
     refute_nil dep
     assert_nil dep[:constraint]
+    assert dep[:pinned]
+  end
+
+  def test_dependency_pinned_flag_true_for_bang_suffix
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "risky.lock")))
+    dep = lf.dependencies.find { |d| d[:name] == "local-tool" }
+    assert dep[:pinned]
+  end
+
+  def test_dependency_pinned_flag_false_without_bang_suffix
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "clean.lock")))
+    dep = lf.dependencies.find { |d| d[:name] == "rake" }
+    refute dep[:pinned]
   end
 
   def test_rejects_unrecognized_input
