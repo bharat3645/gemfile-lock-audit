@@ -170,6 +170,56 @@ module GemfileLockAudit
       end
     end
 
+    # Bundler appends "!" to a DEPENDENCIES entry exactly when that gem needs
+    # a pinned, non-default source to resolve -- GIT, PATH, or a scoped
+    # `source "..." do ... end` custom GEM remote (see CUSTOM_SOURCE_DEPENDENCY
+    # above). A clean `bundle lock` never disagrees with itself about this;
+    # a hand edit or a bad merge conflict resolution can, e.g. a gem moved
+    # into a custom GEM block without adding "!" in DEPENDENCIES, or a stray
+    # "!" left over after a gem was moved back to the default source. Either
+    # direction of disagreement means the lockfile no longer accurately
+    # describes where a gem actually comes from. Severity :medium, same as
+    # GIT_SOURCE/CUSTOM_GEM_REMOTE: it's a real integrity problem with the
+    # lockfile, not just supplementary detail.
+    def source_pin_mismatch(lockfile)
+      git_gems = lockfile.git_sources.flat_map { |src| src.gems.map(&:name) }
+      path_gems = lockfile.path_sources.flat_map { |src| src.gems.map(&:name) }
+
+      lockfile.dependencies.filter_map do |dep|
+        name = dep[:name]
+        spec = lockfile.gem_specs[name]
+
+        pinned_source =
+          if git_gems.include?(name) || path_gems.include?(name)
+            true
+          elsif spec
+            !spec.remote.nil? && spec.remote != DEFAULT_GEM_REMOTE
+          end
+
+        # Gem isn't in GIT, PATH, or GEM at all (an incomplete/corrupt
+        # lockfile) -- nothing to cross-check it against.
+        next if pinned_source.nil?
+        next if pinned_source == dep[:pinned]
+
+        Finding.new(
+          rule_id: "SOURCE_PIN_MISMATCH",
+          severity: :medium,
+          subject: name,
+          message: if dep[:pinned]
+                     "'#{name}' is marked '!' in DEPENDENCIES (pinned to a specific " \
+                     "source) but resolves from the default rubygems remote in GEM. " \
+                     "Bundler only adds '!' for git/path/custom-remote gems -- this " \
+                     "looks like a stray bang left over from a hand edit or merge."
+                   else
+                     "'#{name}' resolves from a non-default source (git, path, or a " \
+                     "custom GEM remote) but isn't marked '!' in DEPENDENCIES. Bundler " \
+                     "always pins these with '!' -- a missing bang here suggests a hand " \
+                     "edit or a bad merge that left the two sections out of sync."
+                   end
+        )
+      end
+    end
+
     def possible_typosquat(lockfile)
       names = lockfile.gem_specs.keys
       names.filter_map do |name|
@@ -228,6 +278,7 @@ module GemfileLockAudit
       missing_bundled_with
       custom_gem_remote
       custom_source_dependency
+      source_pin_mismatch
       possible_typosquat
     ].freeze
   end

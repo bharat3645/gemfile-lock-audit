@@ -19,7 +19,8 @@ module GemfileLockAudit
     :path_sources,     # Array[PathSource]
     :gem_specs,        # Hash[String, GemSpec] -- name => spec, from the GEM section(s)
     :gem_remotes,        # Array[String] -- every "remote:" line seen under a GEM section
-    :dependencies,      # Array[{name:, constraint:}] -- from the DEPENDENCIES section (top-level only)
+    :dependencies,      # Array[{name:, constraint:, pinned:}] -- from the DEPENDENCIES section
+                         # (top-level only); pinned is true when the line ended with "!"
     :platforms,         # Array[String]
     :bundled_with,       # String or nil
     :ruby_version,       # String or nil
@@ -126,8 +127,8 @@ module GemfileLockAudit
         when "PLATFORMS"
           platforms << line
         when "DEPENDENCIES"
-          name, constraint = parse_dependency_line(line)
-          dependencies << { name: name, constraint: constraint } if name
+          name, constraint, pinned = parse_dependency_line(line)
+          dependencies << { name: name, constraint: constraint, pinned: pinned } if name
         when "RUBY VERSION"
           ruby_version = line
         when "BUNDLED WITH"
@@ -156,12 +157,18 @@ module GemfileLockAudit
     end
 
     # "rails (~> 7.0)!" or "rake" or "foo (>= 1.0, < 2.0)"
+    #
+    # The trailing "!" is Bundler's own signal that this dependency resolves
+    # from a pinned, non-default source (GIT, PATH, or a scoped `source do
+    # ... end` custom GEM remote) -- see SOURCE_PIN_MISMATCH in rules.rb,
+    # which cross-checks it against where the gem is actually sourced.
     def parse_dependency_line(line)
-      line = line.delete_suffix("!") # bang marks gems pinned by a GIT/PATH source
+      pinned = line.end_with?("!")
+      line = line.delete_suffix("!")
       m = line.match(/\A(\S+)(?:\s+\(([^)]+)\))?\z/)
-      return [nil, nil] unless m
+      return [nil, nil, nil] unless m
 
-      [m[1], m[2]]
+      [m[1], m[2], pinned]
     end
   end
 end
