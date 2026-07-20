@@ -220,6 +220,42 @@ module GemfileLockAudit
       end
     end
 
+    # SOURCE_PIN_MISMATCH (above) cross-checks a DEPENDENCIES entry's "!" bang
+    # against where the gem is actually sourced -- but it can only do that when
+    # the gem appears in GIT, PATH, or GEM at *some* remote; it explicitly
+    # skips (returns nil pinned_source, then `next`) when the gem is missing
+    # from all three, since there's nothing to compare the bang against. That
+    # skip hides a worse problem than a mismatched bang: a top-level
+    # dependency with no spec anywhere means this lockfile cannot actually be
+    # installed as-is. A clean `bundle lock` never produces this -- it's the
+    # signature of a hand edit, a bad merge conflict resolution that dropped
+    # a GEM entry, or a truncated/corrupted file. Severity :high (one step
+    # above SOURCE_PIN_MISMATCH's :medium): that rule flags inconsistent
+    # metadata on a gem that still resolves; this flags a gem that doesn't
+    # resolve at all.
+    def dangling_dependency(lockfile)
+      git_gems = lockfile.git_sources.flat_map { |src| src.gems.map(&:name) }
+      path_gems = lockfile.path_sources.flat_map { |src| src.gems.map(&:name) }
+
+      lockfile.dependencies.filter_map do |dep|
+        name = dep[:name]
+        next if git_gems.include?(name) || path_gems.include?(name) || lockfile.gem_specs.key?(name)
+
+        Finding.new(
+          rule_id: "DANGLING_DEPENDENCY",
+          severity: :high,
+          subject: name,
+          message: "'#{name}' is listed in DEPENDENCIES but has no matching spec in " \
+                    "GIT, PATH, or GEM -- this lockfile cannot actually resolve " \
+                    "'#{name}'. A clean `bundle lock` never produces this; it points " \
+                    "to a hand edit, a bad merge conflict resolution, or a truncated " \
+                    "or corrupted lockfile. `bundle install --deployment` (and any " \
+                    "frozen/CI install) will fail on this lockfile until it's " \
+                    "regenerated with a real `bundle lock`."
+        )
+      end
+    end
+
     def possible_typosquat(lockfile)
       names = lockfile.gem_specs.keys
       names.filter_map do |name|
@@ -279,6 +315,7 @@ module GemfileLockAudit
       custom_gem_remote
       custom_source_dependency
       source_pin_mismatch
+      dangling_dependency
       possible_typosquat
     ].freeze
   end

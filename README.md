@@ -72,6 +72,7 @@ Score: 59/100 (grade D)
 |---|---|---|
 | `GIT_TRACKS_BRANCH` | high | A git-sourced gem tracks a branch (not a tag/ref), so the next `bundle update` follows unreviewed commits |
 | `POSSIBLE_TYPOSQUAT` | high | A gem name is a near-miss (Levenshtein distance ≤2) to a well-known gem |
+| `DANGLING_DEPENDENCY` | high | A `DEPENDENCIES` entry has no matching spec anywhere in `GIT`/`PATH`/`GEM` -- the lockfile cannot actually resolve that gem; a clean `bundle lock` never produces this |
 | `GIT_SOURCE` | medium | Any gem sourced directly from git instead of a registry |
 | `CUSTOM_GEM_REMOTE` | medium | The `GEM` section resolves from something other than `https://rubygems.org/` (private server, internal mirror) |
 | `SOURCE_PIN_MISMATCH` | medium | The `!` pin marker in `DEPENDENCIES` disagrees with where a gem is actually sourced in `GIT`/`PATH`/`GEM` -- a sign of a hand edit or a bad merge, since `bundle lock` itself never produces this |
@@ -103,7 +104,7 @@ ruby test/test_rules.rb
 ruby test/test_scanner.rb
 ```
 
-44 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
+48 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
 run the test suite).
 
 ## Contributing

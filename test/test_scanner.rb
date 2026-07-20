@@ -62,6 +62,17 @@ class TestScanner < Minitest::Test
     assert_includes mismatch_findings.map(&:subject), "rake"
   end
 
+  def test_dangling_dependency_lockfile_flags_unresolvable_dependency
+    report = GemfileLockAudit::Scanner.scan_file(File.join(FIXTURES, "dangling_dependency.lock"))
+    rule_ids = report.findings.map(&:rule_id)
+
+    assert_includes rule_ids, "DANGLING_DEPENDENCY"
+    dangling_finding = report.findings.find { |f| f.rule_id == "DANGLING_DEPENDENCY" }
+    assert_equal "ghost-gem", dangling_finding.subject
+    assert_equal 85, report.score
+    assert_equal "B", report.grade
+  end
+
   def test_score_to_grade_boundaries
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(100)
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(90)

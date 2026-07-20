@@ -26,6 +26,10 @@ class TestRules < Minitest::Test
     @pin_mismatch ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "pin_mismatch.lock")))
   end
 
+  def dangling_dependency_fixture
+    @dangling_dependency_fixture ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "dangling_dependency.lock")))
+  end
+
   def test_clean_lockfile_has_no_git_or_path_findings
     assert_empty GemfileLockAudit::Rules.git_source_present(clean)
     assert_empty GemfileLockAudit::Rules.path_source_present(clean)
@@ -173,5 +177,28 @@ class TestRules < Minitest::Test
     assert_empty GemfileLockAudit::Rules.source_pin_mismatch(risky)
     assert_empty GemfileLockAudit::Rules.source_pin_mismatch(multi_source)
     assert_empty GemfileLockAudit::Rules.source_pin_mismatch(custom_remote)
+  end
+
+  def test_dangling_dependency_flags_gem_with_no_matching_spec
+    findings = GemfileLockAudit::Rules.dangling_dependency(dangling_dependency_fixture)
+    assert_equal 1, findings.length
+    assert_equal "DANGLING_DEPENDENCY", findings.first.rule_id
+    assert_equal :high, findings.first.severity
+    assert_equal "ghost-gem", findings.first.subject
+  end
+
+  def test_dangling_dependency_does_not_flag_resolvable_gem
+    findings = GemfileLockAudit::Rules.dangling_dependency(dangling_dependency_fixture)
+    refute_includes findings.map(&:subject), "rake"
+  end
+
+  def test_dangling_dependency_silent_on_internally_consistent_lockfiles
+    # Every DEPENDENCIES entry in these fixtures has a matching spec in
+    # GIT, PATH, or GEM -- none of them are missing a spec outright.
+    assert_empty GemfileLockAudit::Rules.dangling_dependency(clean)
+    assert_empty GemfileLockAudit::Rules.dangling_dependency(risky)
+    assert_empty GemfileLockAudit::Rules.dangling_dependency(multi_source)
+    assert_empty GemfileLockAudit::Rules.dangling_dependency(custom_remote)
+    assert_empty GemfileLockAudit::Rules.dangling_dependency(pin_mismatch)
   end
 end
