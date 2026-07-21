@@ -271,22 +271,35 @@ module GemfileLockAudit
     # is simply never loaded -- so it's dead weight and a staleness signal,
     # not a resolution failure.
     #
-    # Reachability is only traced through GEM-section specs, because that's
-    # the only section Parser records an adjacency list for (spec_dependencies
-    # is populated from the GEM section's nested requirement lines -- see
-    # parser.rb). GIT/PATH gems are treated as always reachable when they're
-    # listed directly in DEPENDENCIES.
+    # Reachability is seeded from every top-level DEPENDENCIES entry -- GEM,
+    # GIT, or PATH -- and traced through the shared spec_dependencies
+    # adjacency list, which Parser now populates from the nested requirement
+    # lines of GEM, GIT, and PATH specs alike. This matters because a GEM spec
+    # can be pulled in solely by what a git/path-sourced gem requires; tracing
+    # only GEM adjacency (as an earlier version did) would flag such a spec as
+    # orphaned even though it's genuinely needed. Only GEM specs are ever
+    # *reported* -- a git/path gem is inherently "used" by virtue of being a
+    # source's own declared gem.
     def orphaned_spec(lockfile)
+      # Seed from every top-level dependency, whatever its source: a GEM spec
+      # may be reachable only by way of a git/path gem's own requirements.
       reachable = {}
-      queue = lockfile.dependencies.filter_map do |dep|
-        dep[:name] if lockfile.gem_specs.key?(dep[:name])
-      end
-      queue.each { |name| reachable[name] = true }
+      queue = []
+      lockfile.dependencies.each do |dep|
+        name = dep[:name]
+        next if reachable[name]
 
+        reachable[name] = true
+        queue << name
+      end
+
+      # Walk the shared adjacency list (GEM + GIT + PATH nested requirements).
+      # Traverse through every reachable name, not only known GEM specs, so a
+      # chain that passes through a git/path gem to reach a GEM spec isn't cut
+      # short partway.
       until queue.empty?
         name = queue.shift
         (lockfile.spec_dependencies[name] || []).each do |dep_name|
-          next unless lockfile.gem_specs.key?(dep_name)
           next if reachable[dep_name]
 
           reachable[dep_name] = true

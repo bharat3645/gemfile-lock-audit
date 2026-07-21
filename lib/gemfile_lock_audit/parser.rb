@@ -21,10 +21,11 @@ module GemfileLockAudit
     :gem_remotes,        # Array[String] -- every "remote:" line seen under a GEM section
     :dependencies,      # Array[{name:, constraint:, pinned:}] -- from the DEPENDENCIES section
                          # (top-level only); pinned is true when the line ended with "!"
-    :spec_dependencies, # Hash[String, Array[String]] -- GEM-section spec name => the names
-                         # of the gems *that spec itself* declares as its own runtime
-                         # dependencies (Bundler nests these one indent level deeper than
-                         # the spec line, e.g. "rspec-core" under "rspec (3.12.0)"). This is
+    :spec_dependencies, # Hash[String, Array[String]] -- spec name (from a GEM, GIT, or PATH
+                         # block) => the names of the gems *that spec itself* declares as its
+                         # own runtime dependencies (Bundler nests these one indent level
+                         # deeper than the spec line, e.g. "rspec-core" under "rspec (3.12.0)",
+                         # and likewise under a git/path gem's own spec line). This is
                          # an adjacency list, not another set of specs to audit -- version
                          # constraints on these nested lines are discarded since only the
                          # name is needed to trace reachability from DEPENDENCIES down
@@ -66,6 +67,7 @@ module GemfileLockAudit
       current_source = nil # the GitSource/PathSource currently being built
       current_gem_remote = nil # the "remote:" value of the GEM block currently being read
       current_gem_spec_name = nil # the GEM spec whose nested dependency lines we're reading
+      current_source_spec_name = nil # the GIT/PATH spec whose nested dependency lines we're reading
 
       lines.each do |raw_line|
         next if raw_line.strip.empty?
@@ -80,9 +82,11 @@ module GemfileLockAudit
           when "GIT"
             current_source = GitSource.new(gems: [])
             git_sources << current_source
+            current_source_spec_name = nil
           when "PATH"
             current_source = PathSource.new(gems: [])
             path_sources << current_source
+            current_source_spec_name = nil
           when "GEM"
             # A lockfile can have more than one top-level GEM block (e.g. one
             # per scoped `source "..." do ... end` in the Gemfile) -- reset so
@@ -113,11 +117,27 @@ module GemfileLockAudit
             when "specs"
               subsection = :specs
             end
-          elsif indent >= 4 && subsection == :specs
-            # e.g. "foo (1.2.3)" -- ignore nested transitive deps (deeper indent)
-            next if indent > 6
-            name, version = parse_spec_line(line)
-            current_source.gems << GemSpec.new(name: name, version: version, source: section == "GIT" ? :git : :path) if name
+          elsif subsection == :specs
+            if indent == 4
+              # The gem this GIT/PATH source actually provides, e.g.
+              # "patched-gem (0.3.0)".
+              name, version = parse_spec_line(line)
+              if name
+                current_source.gems << GemSpec.new(name: name, version: version, source: section == "GIT" ? :git : :path)
+                current_source_spec_name = name
+              end
+            elsif indent > 4 && current_source_spec_name
+              # A dependency the current GIT/PATH spec itself declares, nested
+              # one indent level deeper -- structurally identical to the GEM
+              # section's nested requirement lines. Only the name feeds the
+              # shared spec_dependencies adjacency list (the constraint is
+              # discarded) so ORPHANED_SPEC reachability can trace from a
+              # git/path gem down into the GEM specs it pulls in. These nested
+              # lines are requirements, not gems this source provides, so they
+              # must NOT be added to current_source.gems.
+              dep_name = parse_nested_dependency_name(line)
+              (spec_dependencies[current_source_spec_name] ||= []) << dep_name if dep_name
+            end
           end
         when "GEM"
           if indent == 2

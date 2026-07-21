@@ -78,7 +78,7 @@ Score: 59/100 (grade D)
 | `SOURCE_PIN_MISMATCH` | medium | The `!` pin marker in `DEPENDENCIES` disagrees with where a gem is actually sourced in `GIT`/`PATH`/`GEM` -- a sign of a hand edit or a bad merge, since `bundle lock` itself never produces this |
 | `CUSTOM_SOURCE_DEPENDENCY` | info | Per-gem detail for `CUSTOM_GEM_REMOTE`: names exactly which dependency resolves from that non-default remote, e.g. one pinned there by a scoped `source "..." do ... end` block in the Gemfile |
 | `PRERELEASE_PIN` | low | A resolved version looks like an alpha/beta/rc/pre build |
-| `ORPHANED_SPEC` | low | A resolved `GEM` spec that's unreachable from `DEPENDENCIES` -- not required directly, and not required transitively by anything that is. The mirror image of `DANGLING_DEPENDENCY`: dead weight from a hand edit or a gem dropped from the Gemfile without a fresh `bundle lock`, rather than a resolution failure |
+| `ORPHANED_SPEC` | low | A resolved `GEM` spec that's unreachable from `DEPENDENCIES` -- not required directly, and not required transitively by anything that is (reachability is traced through the nested requirement lines of `GEM`, `GIT`, and `PATH` specs alike). The mirror image of `DANGLING_DEPENDENCY`: dead weight from a hand edit or a gem dropped from the Gemfile without a fresh `bundle lock`, rather than a resolution failure |
 | `PATH_SOURCE` | info | A gem is loaded from a local filesystem path |
 | `UNCONSTRAINED_DEPENDENCY` | info | A top-level Gemfile dependency has no version constraint at all |
 | `MISSING_BUNDLED_WITH` | info | The lockfile doesn't pin a Bundler version |
@@ -96,11 +96,6 @@ that an F.
 - No `bundle install` / no code execution from the scanned project.
 - Not a full Bundler reimplementation — it parses the sections Bundler
   actually writes to `Gemfile.lock`, not arbitrary hand-edited lockfiles.
-- `ORPHANED_SPEC` only traces reachability through the `GEM` section's own
-  nested requirement lines (what each resolved spec itself depends on) --
-  it doesn't walk into what a `GIT`/`PATH`-sourced gem requires, since the
-  parser doesn't capture that adjacency list yet. A `GIT`/`PATH` gem listed
-  directly in `DEPENDENCIES` is always treated as reachable.
 
 ## Development
 
@@ -110,7 +105,7 @@ ruby test/test_rules.rb
 ruby test/test_scanner.rb
 ```
 
-54 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
+59 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
 run the test suite).
 
 ## Contributing

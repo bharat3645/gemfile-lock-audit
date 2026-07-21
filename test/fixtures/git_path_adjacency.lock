@@ -1,0 +1,31 @@
+GIT
+  remote: https://github.com/example/widget.git
+  revision: a1b2c3d4e5f60718293a4b5c6d7e8f9012345678
+  tag: v1.2.0
+  specs:
+    widget (1.2.0)
+      widget-core (>= 1.0)
+      thor
+
+PATH
+  remote: ../toolkit
+  specs:
+    toolkit (0.1.0)
+      toolkit-support
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    thor (1.2.1)
+    toolkit-support (0.9.0)
+    widget-core (1.1.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  toolkit!
+  widget!
+
+BUNDLED WITH
+   2.4.10
