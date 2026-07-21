@@ -34,6 +34,10 @@ class TestRules < Minitest::Test
     @orphaned_spec_fixture ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "orphaned_spec.lock")))
   end
 
+  def git_path_adjacency
+    @git_path_adjacency ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "git_path_adjacency.lock")))
+  end
+
   def test_clean_lockfile_has_no_git_or_path_findings
     assert_empty GemfileLockAudit::Rules.git_source_present(clean)
     assert_empty GemfileLockAudit::Rules.path_source_present(clean)
@@ -233,5 +237,30 @@ class TestRules < Minitest::Test
     assert_empty GemfileLockAudit::Rules.orphaned_spec(custom_remote)
     assert_empty GemfileLockAudit::Rules.orphaned_spec(pin_mismatch)
     assert_empty GemfileLockAudit::Rules.orphaned_spec(dangling_dependency_fixture)
+  end
+
+  def test_orphaned_spec_traces_reachability_through_git_and_path_gems
+    # widget-core and thor are required only by the git gem "widget", and
+    # toolkit-support only by the path gem "toolkit" -- none appears in
+    # DEPENDENCIES directly or in another GEM spec's requirements. Before
+    # git/path adjacency was captured these three GEM specs were falsely
+    # flagged as orphaned; reachability now seeds from the git/path
+    # DEPENDENCIES roots and walks their nested requirements into GEM.
+    assert_empty GemfileLockAudit::Rules.orphaned_spec(git_path_adjacency)
+  end
+
+  def test_orphaned_spec_still_flags_true_orphan_alongside_git_path_adjacency
+    # The git gem "app" pulls in "used-gem", but "dead-gem" is required by
+    # nothing at all. Traversing git/path adjacency must not blanket-whitelist
+    # every GEM spec -- a genuinely unreachable one is still caught.
+    lockfile = GemfileLockAudit::Parser.parse(
+      "GIT\n  remote: https://github.com/example/app.git\n  revision: abc123\n  tag: v1\n  specs:\n" \
+      "    app (1.0)\n      used-gem\n" \
+      "GEM\n  remote: https://rubygems.org/\n  specs:\n    used-gem (1.0)\n    dead-gem (1.0)\n" \
+      "PLATFORMS\n  ruby\nDEPENDENCIES\n  app!\n"
+    )
+    subjects = GemfileLockAudit::Rules.orphaned_spec(lockfile).map(&:subject)
+    assert_includes subjects, "dead-gem"
+    refute_includes subjects, "used-gem"
   end
 end
