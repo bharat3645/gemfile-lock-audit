@@ -119,4 +119,24 @@ class TestParser < Minitest::Test
     lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "multi_source.lock")))
     assert_empty lf.spec_dependencies
   end
+
+  def test_spec_dependencies_captured_for_git_and_path_specs
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "git_path_adjacency.lock")))
+    # Nested requirement lines under a git/path spec become adjacency entries
+    # keyed by that spec's name -- exactly like GEM nested requirements. The
+    # version constraint ("widget-core (>= 1.0)") is discarded; only the name
+    # is kept.
+    assert_equal %w[widget-core thor], lf.spec_dependencies["widget"]
+    assert_equal %w[toolkit-support], lf.spec_dependencies["toolkit"]
+  end
+
+  def test_git_and_path_nested_requirements_are_not_source_gems
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "git_path_adjacency.lock")))
+    # The git source *provides* only "widget"; "widget-core" and "thor" are
+    # gems widget requires, resolved in the GEM section, not extra gems the
+    # git remote itself ships. (A constrained nested line like
+    # "widget-core (>= 1.0)" used to be misread as a second source gem.)
+    assert_equal %w[widget], lf.git_sources.first.gems.map(&:name)
+    assert_equal %w[toolkit], lf.path_sources.first.gems.map(&:name)
+  end
 end
