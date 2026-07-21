@@ -256,6 +256,59 @@ module GemfileLockAudit
       end
     end
 
+    # DANGLING_DEPENDENCY (above) catches a DEPENDENCIES entry with no
+    # matching spec anywhere. This is the mirror image on the GEM side: a
+    # spec that *does* exist in GEM but that nothing actually needs --
+    # neither a top-level DEPENDENCIES entry nor another spec's own nested
+    # requirement list (now that Parser captures spec_dependencies, that
+    # adjacency list is walked here via breadth-first reachability from the
+    # DEPENDENCIES roots). A clean `bundle lock` always prunes unreachable
+    # specs, so this only shows up from a hand edit that added a spec
+    # directly to GEM without wiring it in, or a gem removed from the
+    # Gemfile without re-running `bundle lock` to drop its now-dead entry.
+    # Severity :low (below DANGLING_DEPENDENCY's :high): unlike a dangling
+    # dependency this doesn't break `bundle install` -- an unreachable spec
+    # is simply never loaded -- so it's dead weight and a staleness signal,
+    # not a resolution failure.
+    #
+    # Reachability is only traced through GEM-section specs, because that's
+    # the only section Parser records an adjacency list for (spec_dependencies
+    # is populated from the GEM section's nested requirement lines -- see
+    # parser.rb). GIT/PATH gems are treated as always reachable when they're
+    # listed directly in DEPENDENCIES.
+    def orphaned_spec(lockfile)
+      reachable = {}
+      queue = lockfile.dependencies.filter_map do |dep|
+        dep[:name] if lockfile.gem_specs.key?(dep[:name])
+      end
+      queue.each { |name| reachable[name] = true }
+
+      until queue.empty?
+        name = queue.shift
+        (lockfile.spec_dependencies[name] || []).each do |dep_name|
+          next unless lockfile.gem_specs.key?(dep_name)
+          next if reachable[dep_name]
+
+          reachable[dep_name] = true
+          queue << dep_name
+        end
+      end
+
+      lockfile.gem_specs.values.reject { |spec| reachable[spec.name] }.map do |spec|
+        Finding.new(
+          rule_id: "ORPHANED_SPEC",
+          severity: :low,
+          subject: spec.name,
+          message: "'#{spec.name}' (#{spec.version}) has a resolved spec in GEM but " \
+                    "isn't required by anything in DEPENDENCIES, directly or " \
+                    "transitively through another spec's own requirements. A clean " \
+                    "`bundle lock` prunes specs like this; its presence suggests a " \
+                    "hand edit, or a gem that was removed from the Gemfile without " \
+                    "re-running `bundle lock` to drop its now-dead entry."
+        )
+      end
+    end
+
     def possible_typosquat(lockfile)
       names = lockfile.gem_specs.keys
       names.filter_map do |name|
@@ -316,6 +369,7 @@ module GemfileLockAudit
       custom_source_dependency
       source_pin_mismatch
       dangling_dependency
+      orphaned_spec
       possible_typosquat
     ].freeze
   end

@@ -106,4 +106,17 @@ class TestParser < Minitest::Test
     assert_nil git_spec.remote
     assert_nil path_spec.remote
   end
+
+  def test_spec_dependencies_captured_for_nested_requirements
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "clean.lock")))
+    assert_equal %w[rspec-core rspec-expectations rspec-mocks], lf.spec_dependencies["rspec"]
+    assert_equal %w[rspec-support], lf.spec_dependencies["rspec-core"]
+    assert_nil lf.spec_dependencies["rake"]
+    assert_nil lf.spec_dependencies["minitest"]
+  end
+
+  def test_spec_dependencies_empty_for_flat_lockfile_without_nesting
+    lf = GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "multi_source.lock")))
+    assert_empty lf.spec_dependencies
+  end
 end

@@ -30,6 +30,10 @@ class TestRules < Minitest::Test
     @dangling_dependency_fixture ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "dangling_dependency.lock")))
   end
 
+  def orphaned_spec_fixture
+    @orphaned_spec_fixture ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "orphaned_spec.lock")))
+  end
+
   def test_clean_lockfile_has_no_git_or_path_findings
     assert_empty GemfileLockAudit::Rules.git_source_present(clean)
     assert_empty GemfileLockAudit::Rules.path_source_present(clean)
@@ -200,5 +204,34 @@ class TestRules < Minitest::Test
     assert_empty GemfileLockAudit::Rules.dangling_dependency(multi_source)
     assert_empty GemfileLockAudit::Rules.dangling_dependency(custom_remote)
     assert_empty GemfileLockAudit::Rules.dangling_dependency(pin_mismatch)
+  end
+
+  def test_orphaned_spec_flags_gem_unreachable_from_dependencies
+    findings = GemfileLockAudit::Rules.orphaned_spec(orphaned_spec_fixture)
+    assert_equal 1, findings.length
+    assert_equal "ORPHANED_SPEC", findings.first.rule_id
+    assert_equal :low, findings.first.severity
+    assert_equal "orphan-gem", findings.first.subject
+  end
+
+  def test_orphaned_spec_does_not_flag_gem_reachable_only_transitively
+    # rspec-core isn't in DEPENDENCIES directly -- it's only reachable by
+    # walking rspec's own nested requirement list. It must not be flagged.
+    findings = GemfileLockAudit::Rules.orphaned_spec(orphaned_spec_fixture)
+    refute_includes findings.map(&:subject), "rspec-core"
+    refute_includes findings.map(&:subject), "rspec"
+    refute_includes findings.map(&:subject), "rake"
+  end
+
+  def test_orphaned_spec_silent_on_internally_consistent_lockfiles
+    # Every gem_specs entry in these fixtures is either listed directly in
+    # DEPENDENCIES or reachable transitively -- none has a dead, unreachable
+    # spec.
+    assert_empty GemfileLockAudit::Rules.orphaned_spec(clean)
+    assert_empty GemfileLockAudit::Rules.orphaned_spec(risky)
+    assert_empty GemfileLockAudit::Rules.orphaned_spec(multi_source)
+    assert_empty GemfileLockAudit::Rules.orphaned_spec(custom_remote)
+    assert_empty GemfileLockAudit::Rules.orphaned_spec(pin_mismatch)
+    assert_empty GemfileLockAudit::Rules.orphaned_spec(dangling_dependency_fixture)
   end
 end

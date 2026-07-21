@@ -73,6 +73,19 @@ class TestScanner < Minitest::Test
     assert_equal "B", report.grade
   end
 
+  def test_orphaned_spec_lockfile_flags_unreachable_gem
+    report = GemfileLockAudit::Scanner.scan_file(File.join(FIXTURES, "orphaned_spec.lock"))
+    rule_ids = report.findings.map(&:rule_id)
+
+    assert_includes rule_ids, "ORPHANED_SPEC"
+    orphan_finding = report.findings.find { |f| f.rule_id == "ORPHANED_SPEC" }
+    assert_equal "orphan-gem", orphan_finding.subject
+    # -3 for the single :low ORPHANED_SPEC finding; the two
+    # UNCONSTRAINED_DEPENDENCY findings (rake, rspec) are :info (0-weight).
+    assert_equal 97, report.score
+    assert_equal "A", report.grade
+  end
+
   def test_score_to_grade_boundaries
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(100)
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(90)

@@ -21,6 +21,14 @@ module GemfileLockAudit
     :gem_remotes,        # Array[String] -- every "remote:" line seen under a GEM section
     :dependencies,      # Array[{name:, constraint:, pinned:}] -- from the DEPENDENCIES section
                          # (top-level only); pinned is true when the line ended with "!"
+    :spec_dependencies, # Hash[String, Array[String]] -- GEM-section spec name => the names
+                         # of the gems *that spec itself* declares as its own runtime
+                         # dependencies (Bundler nests these one indent level deeper than
+                         # the spec line, e.g. "rspec-core" under "rspec (3.12.0)"). This is
+                         # an adjacency list, not another set of specs to audit -- version
+                         # constraints on these nested lines are discarded since only the
+                         # name is needed to trace reachability from DEPENDENCIES down
+                         # through the dependency graph (see Rules.orphaned_spec).
     :platforms,         # Array[String]
     :bundled_with,       # String or nil
     :ruby_version,       # String or nil
@@ -48,6 +56,7 @@ module GemfileLockAudit
       gem_specs = {}
       gem_remotes = []
       dependencies = []
+      spec_dependencies = {}
       platforms = []
       bundled_with = nil
       ruby_version = nil
@@ -56,6 +65,7 @@ module GemfileLockAudit
       subsection = nil # within GIT/PATH/GEM: :remote_block, :specs
       current_source = nil # the GitSource/PathSource currently being built
       current_gem_remote = nil # the "remote:" value of the GEM block currently being read
+      current_gem_spec_name = nil # the GEM spec whose nested dependency lines we're reading
 
       lines.each do |raw_line|
         next if raw_line.strip.empty?
@@ -79,6 +89,7 @@ module GemfileLockAudit
             # specs in this block aren't attributed to the previous block's
             # remote.
             current_gem_remote = nil
+            current_gem_spec_name = nil
           end
           next
         end
@@ -121,9 +132,21 @@ module GemfileLockAudit
             end
           elsif indent == 4 && subsection == :specs
             name, version = parse_spec_line(line)
-            gem_specs[name] = GemSpec.new(name: name, version: version, source: :rubygems, remote: current_gem_remote) if name
+            if name
+              gem_specs[name] = GemSpec.new(name: name, version: version, source: :rubygems, remote: current_gem_remote)
+              current_gem_spec_name = name
+            end
+          elsif indent > 4 && subsection == :specs && current_gem_spec_name
+            # A dependency the current spec itself declares, e.g.
+            # "rspec-core (~> 3.12.0)" nested under "rspec (3.12.0)". Only the
+            # name feeds the adjacency list -- the version constraint here is
+            # what *that* gem's own Gemfile-equivalent would require, not
+            # what's actually resolved (that's gem_specs[name].version).
+            dep_name = parse_nested_dependency_name(line)
+            if dep_name
+              (spec_dependencies[current_gem_spec_name] ||= []) << dep_name
+            end
           end
-          # deeper indents (>4) are transitive sub-dependency listings; not needed for auditing
         when "PLATFORMS"
           platforms << line
         when "DEPENDENCIES"
@@ -142,6 +165,7 @@ module GemfileLockAudit
         gem_specs: gem_specs,
         gem_remotes: gem_remotes,
         dependencies: dependencies,
+        spec_dependencies: spec_dependencies,
         platforms: platforms,
         bundled_with: bundled_with,
         ruby_version: ruby_version
@@ -169,6 +193,18 @@ module GemfileLockAudit
       return [nil, nil, nil] unless m
 
       [m[1], m[2], pinned]
+    end
+
+    # "rspec-core (~> 3.12.0)" or "rake" => "rspec-core" / "rake"
+    #
+    # These are the nested lines under a GEM spec, listing the dependencies
+    # that spec itself requires. Unlike parse_spec_line, the version part is
+    # optional here (a bare dependency name with no constraint is legal),
+    # and unlike parse_dependency_line there's no trailing "!" to strip --
+    # only DEPENDENCIES entries get that marker.
+    def parse_nested_dependency_name(line)
+      m = line.match(/\A(\S+)/)
+      m && m[1]
     end
   end
 end
