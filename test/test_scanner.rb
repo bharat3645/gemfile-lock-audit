@@ -86,6 +86,22 @@ class TestScanner < Minitest::Test
     assert_equal "A", report.grade
   end
 
+  def test_git_path_adjacency_lockfile_has_no_false_orphan
+    report = GemfileLockAudit::Scanner.scan_file(File.join(FIXTURES, "git_path_adjacency.lock"))
+    rule_ids = report.findings.map(&:rule_id)
+
+    # widget-core, thor and toolkit-support are reachable only through the
+    # git/path gems' nested requirements -- none should be mis-flagged now
+    # that ORPHANED_SPEC reachability traverses git/path adjacency.
+    refute_includes rule_ids, "ORPHANED_SPEC"
+    # The git source itself is still surfaced as usual.
+    assert_includes rule_ids, "GIT_SOURCE"
+    # Only GIT_SOURCE (:medium, -8) carries weight here; PATH_SOURCE and the
+    # two UNCONSTRAINED_DEPENDENCY findings (toolkit, widget) are :info.
+    assert_equal 92, report.score
+    assert_equal "A", report.grade
+  end
+
   def test_score_to_grade_boundaries
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(100)
     assert_equal "A", GemfileLockAudit::Scanner.score_to_grade(90)
