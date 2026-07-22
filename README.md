@@ -9,7 +9,10 @@ their respective inputs.
 **Zero runtime dependencies. Zero network calls.** It parses the lockfile
 text itself — no `bundle install`, no hitting rubygems.org, no executing
 anything from the Gemfile. Just static analysis of what's already been
-resolved and committed to your repo.
+resolved and committed to your repo. (`CONSTRAINT_VIOLATION` below uses
+`Gem::Version`/`Gem::Requirement` from Ruby's bundled RubyGems library --
+still no network call and no external gem install, just the version-comparison
+logic that ships with the `ruby` interpreter itself.)
 
 ## Why
 
@@ -73,6 +76,7 @@ Score: 59/100 (grade D)
 | `GIT_TRACKS_BRANCH` | high | A git-sourced gem tracks a branch (not a tag/ref), so the next `bundle update` follows unreviewed commits |
 | `POSSIBLE_TYPOSQUAT` | high | A gem name is a near-miss (Levenshtein distance ≤2) to a well-known gem |
 | `DANGLING_DEPENDENCY` | high | A `DEPENDENCIES` entry has no matching spec anywhere in `GIT`/`PATH`/`GEM` -- the lockfile cannot actually resolve that gem; a clean `bundle lock` never produces this |
+| `CONSTRAINT_VIOLATION` | high | A `DEPENDENCIES` entry's own version constraint (e.g. `~> 13.0`) disagrees with the version actually resolved in `GIT`/`PATH`/`GEM` -- a clean `bundle lock` never lets these disagree; `bundle install --deployment` will refuse to proceed until it's regenerated |
 | `GIT_SOURCE` | medium | Any gem sourced directly from git instead of a registry |
 | `CUSTOM_GEM_REMOTE` | medium | The `GEM` section resolves from something other than `https://rubygems.org/` (private server, internal mirror) |
 | `SOURCE_PIN_MISMATCH` | medium | The `!` pin marker in `DEPENDENCIES` disagrees with where a gem is actually sourced in `GIT`/`PATH`/`GEM` -- a sign of a hand edit or a bad merge, since `bundle lock` itself never produces this |
@@ -96,6 +100,12 @@ that an F.
 - No `bundle install` / no code execution from the scanned project.
 - Not a full Bundler reimplementation — it parses the sections Bundler
   actually writes to `Gemfile.lock`, not arbitrary hand-edited lockfiles.
+- `CONSTRAINT_VIOLATION` only checks top-level `DEPENDENCIES` constraints
+  against resolved versions. The nested requirement lines under each spec
+  (e.g. `rspec-core (~> 3.12.0)` under `rspec`) still have their own version
+  constraints discarded at parse time -- only the name is kept, for
+  `ORPHANED_SPEC`'s reachability graph. Checking those too would need the
+  parser to retain nested constraints alongside names.
 
 ## Development
 
@@ -105,7 +115,7 @@ ruby test/test_rules.rb
 ruby test/test_scanner.rb
 ```
 
-59 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
+65 tests, `minitest` only (bundled with Ruby — no `gem install` needed to
 run the test suite).
 
 ## Contributing

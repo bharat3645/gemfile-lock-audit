@@ -38,6 +38,10 @@ class TestRules < Minitest::Test
     @git_path_adjacency ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "git_path_adjacency.lock")))
   end
 
+  def constraint_violation_fixture
+    @constraint_violation_fixture ||= GemfileLockAudit::Parser.parse(File.read(File.join(FIXTURES, "constraint_violation.lock")))
+  end
+
   def test_clean_lockfile_has_no_git_or_path_findings
     assert_empty GemfileLockAudit::Rules.git_source_present(clean)
     assert_empty GemfileLockAudit::Rules.path_source_present(clean)
@@ -208,6 +212,53 @@ class TestRules < Minitest::Test
     assert_empty GemfileLockAudit::Rules.dangling_dependency(multi_source)
     assert_empty GemfileLockAudit::Rules.dangling_dependency(custom_remote)
     assert_empty GemfileLockAudit::Rules.dangling_dependency(pin_mismatch)
+  end
+
+  def test_constraint_violation_flags_gem_whose_resolved_version_fails_the_constraint
+    findings = GemfileLockAudit::Rules.constraint_violation(constraint_violation_fixture)
+    assert_equal 1, findings.length
+    finding = findings.first
+    assert_equal "CONSTRAINT_VIOLATION", finding.rule_id
+    assert_equal :high, finding.severity
+    assert_equal "rake", finding.subject
+    assert_match(/~> 13\.0/, finding.message)
+    assert_match(/12\.3\.3/, finding.message)
+  end
+
+  def test_constraint_violation_does_not_flag_unconstrained_dependency
+    findings = GemfileLockAudit::Rules.constraint_violation(constraint_violation_fixture)
+    refute_includes findings.map(&:subject), "thor"
+  end
+
+  def test_constraint_violation_silent_on_internally_consistent_lockfiles
+    # Every constrained DEPENDENCIES entry in these fixtures resolves to a
+    # version that actually satisfies its own constraint.
+    assert_empty GemfileLockAudit::Rules.constraint_violation(clean)
+    assert_empty GemfileLockAudit::Rules.constraint_violation(risky)
+    assert_empty GemfileLockAudit::Rules.constraint_violation(multi_source)
+    assert_empty GemfileLockAudit::Rules.constraint_violation(custom_remote)
+    assert_empty GemfileLockAudit::Rules.constraint_violation(pin_mismatch)
+    assert_empty GemfileLockAudit::Rules.constraint_violation(dangling_dependency_fixture)
+    assert_empty GemfileLockAudit::Rules.constraint_violation(orphaned_spec_fixture)
+  end
+
+  def test_constraint_violation_checks_git_and_path_sourced_gems_too
+    lockfile = GemfileLockAudit::Parser.parse(
+      "GIT\n  remote: https://github.com/example/patched-gem.git\n  revision: abc123\n  tag: v1\n  specs:\n" \
+      "    patched-gem (0.3.0)\n" \
+      "PLATFORMS\n  ruby\nDEPENDENCIES\n  patched-gem (~> 1.0)!\n"
+    )
+    findings = GemfileLockAudit::Rules.constraint_violation(lockfile)
+    assert_equal 1, findings.length
+    assert_equal "patched-gem", findings.first.subject
+  end
+
+  def test_constraint_violation_ignores_unparseable_constraint_instead_of_raising
+    lockfile = GemfileLockAudit::Parser.parse(
+      "GEM\n  remote: https://rubygems.org/\n  specs:\n    rake (13.0.6)\n" \
+      "PLATFORMS\n  ruby\nDEPENDENCIES\n  rake (not a real constraint)\n"
+    )
+    assert_empty GemfileLockAudit::Rules.constraint_violation(lockfile)
   end
 
   def test_orphaned_spec_flags_gem_unreachable_from_dependencies

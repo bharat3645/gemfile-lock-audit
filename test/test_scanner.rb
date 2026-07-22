@@ -73,6 +73,19 @@ class TestScanner < Minitest::Test
     assert_equal "B", report.grade
   end
 
+  def test_constraint_violation_lockfile_flags_version_mismatch
+    report = GemfileLockAudit::Scanner.scan_file(File.join(FIXTURES, "constraint_violation.lock"))
+    rule_ids = report.findings.map(&:rule_id)
+
+    assert_includes rule_ids, "CONSTRAINT_VIOLATION"
+    finding = report.findings.find { |f| f.rule_id == "CONSTRAINT_VIOLATION" }
+    assert_equal "rake", finding.subject
+    # -15 for the single :high CONSTRAINT_VIOLATION finding; thor has no
+    # constraint at all so it's a silent (:info, 0-weight) UNCONSTRAINED_DEPENDENCY.
+    assert_equal 85, report.score
+    assert_equal "B", report.grade
+  end
+
   def test_orphaned_spec_lockfile_flags_unreachable_gem
     report = GemfileLockAudit::Scanner.scan_file(File.join(FIXTURES, "orphaned_spec.lock"))
     rule_ids = report.findings.map(&:rule_id)

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "rubygems"
+
 module GemfileLockAudit
   Finding = Struct.new(:rule_id, :severity, :subject, :message, keyword_init: true)
 
@@ -256,6 +258,69 @@ module GemfileLockAudit
       end
     end
 
+    # DANGLING_DEPENDENCY only checks *whether* a DEPENDENCIES entry has a
+    # matching spec anywhere. It says nothing about whether the version that
+    # spec actually resolved to is one the Gemfile's own constraint would
+    # accept -- and until now nothing did: `constraint` has been sitting on
+    # every dependency hash since Parser first captured it, unused by any
+    # rule. A clean `bundle lock` guarantees the two always agree; a hand
+    # edit (bump a version in GEM without touching the Gemfile/DEPENDENCIES,
+    # or vice versa) or a bad merge can leave them silently out of sync.
+    # Severity :high, the same tier as DANGLING_DEPENDENCY: unlike that rule
+    # the gem *does* resolve, but to a version the lockfile itself says is
+    # not allowed -- `bundle install --deployment` (and any frozen/CI
+    # install) will refuse to proceed and force a re-resolve the moment
+    # anyone actually runs it.
+    def constraint_violation(lockfile)
+      lockfile.dependencies.filter_map do |dep|
+        constraint = dep[:constraint]
+        next if constraint.nil? || constraint.strip.empty?
+
+        spec = lockfile.gem_specs[dep[:name]] ||
+               lockfile.git_sources.flat_map(&:gems).find { |g| g.name == dep[:name] } ||
+               lockfile.path_sources.flat_map(&:gems).find { |g| g.name == dep[:name] }
+        next unless spec
+
+        requirement = parse_requirement(constraint)
+        next unless requirement
+
+        version = parse_version(spec.version)
+        next unless version
+        next if requirement.satisfied_by?(version)
+
+        Finding.new(
+          rule_id: "CONSTRAINT_VIOLATION",
+          severity: :high,
+          subject: dep[:name],
+          message: "'#{dep[:name]}' is constrained to '#{constraint}' in DEPENDENCIES " \
+                    "but resolves to #{spec.version}, which does not satisfy that " \
+                    "constraint. A clean `bundle lock` never disagrees with itself " \
+                    "this way -- this points to a hand edit (a version bumped in one " \
+                    "section but not the other) or a bad merge. `bundle install " \
+                    "--deployment` (and any frozen/CI install) will refuse to proceed " \
+                    "from this lockfile until it's regenerated with a real `bundle lock`."
+        )
+      end
+    end
+
+    # Parses a (possibly comma-separated) Gemfile.lock constraint string,
+    # e.g. "~> 13.0" or ">= 1.0, < 2.0", into a Gem::Requirement. Returns nil
+    # instead of raising on a constraint string Gem::Requirement can't parse,
+    # so a lockfile with an unexpected constraint format degrades to "no
+    # finding" rather than crashing the whole scan.
+    def parse_requirement(constraint)
+      Gem::Requirement.new(constraint.split(",").map(&:strip))
+    rescue ArgumentError
+      nil
+    end
+
+    # Same degrade-instead-of-raise treatment for the resolved version string.
+    def parse_version(version)
+      Gem::Version.new(version)
+    rescue ArgumentError
+      nil
+    end
+
     # DANGLING_DEPENDENCY (above) catches a DEPENDENCIES entry with no
     # matching spec anywhere. This is the mirror image on the GEM side: a
     # spec that *does* exist in GEM but that nothing actually needs --
@@ -382,6 +447,7 @@ module GemfileLockAudit
       custom_source_dependency
       source_pin_mismatch
       dangling_dependency
+      constraint_violation
       orphaned_spec
       possible_typosquat
     ].freeze
